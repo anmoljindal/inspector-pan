@@ -1,10 +1,11 @@
+import re
+from datetime import date
+
+import cv2
 import streamlit as st
 from streamlit.script_runner import RerunException
 
-import cv2
-import re
-from PIL import Image
-from streamlit.type_util import is_graphviz_chart
+import image_process
 
 name_regex = '[A-Za-z]{2,25}( [A-Za-z]{2,25})?'
 name_regex = re.compile(name_regex)
@@ -15,50 +16,49 @@ pan_regex = re.compile(pan_regex)
 st.title("PAN Card Reader")
 st.markdown("submit and verify your pan card")
 
+
 pan_card_image = st.file_uploader("Upload image", type=['png', 'jpg'], accept_multiple_files=False)
+
+cols = st.beta_columns(2)
+with cols[0]:
+    pan = st.text_input("PAN number")
+with cols[1]:
+    min_value = date(1921, 1, 1)
+    dob = st.date_input("Date of Birth", min_value=min_value)
 name = st.text_input("Name")
-pan = st.text_input("PAN number")
 fathers_name = st.text_input("Father's Name")
-dob = st.date_input("Date of Birth")
 
-def read_image(image):
-    try:
-        image = Image.open(image).convert('RGB')
-        return image
-    except:
-        return
-
-def verify_name(name):
-    is_valid = bool(name_regex.fullmatch(name))
-    return is_valid
-
-def standardize_name(name):
+def standardize_name(name: str) -> str:
     name = " ".join(name.lower().split())
     return name
 
-def verify_pan(pan):
+def standardize_dob(dob: date) -> str:
+    dob = dob.strftime("%d/%m/%Y")
+    return dob
+
+def verify_name(name: str) -> bool:
+    is_valid = bool(name_regex.fullmatch(name))
+    return is_valid
+
+def verify_pan(pan: str) -> bool:
     is_valid = bool(pan_regex.fullmatch(pan))
     return is_valid
 
-def verification_failure(message):
+def verification_failure(message: str):
 
     st.error(f"PAN Card Verification failed: {message}")
-    raise st.script_runner.RerunException(st.script_request_queue.RerunData(None))
+
+def verification_success():
+
+    st.success(f"verification successful")
 
 if st.button("verify"):
-    st.markdown(f'''
-    PAN: {pan}\n
-    name: {name}\n
-    fathers_name: {fathers_name}\n
-    dob: {dob}\n
-    image: {pan_card_image}
-    ''')
     ## preverification checks
 
     if (pan_card_image is None) or (len(name.strip())==0) or (len(fathers_name.strip())==0):
         verification_failure("missing details")
 
-    image = read_image(pan_card_image)
+    image = image_process.read_image(pan_card_image)
     if image is None:
         verification_failure("invalid image")
     
@@ -70,11 +70,31 @@ if st.button("verify"):
     if not verify_pan(pan):
         verification_failure("incorrect pan number")
 
-    st.image(image)
+    dob = standardize_dob(dob)
+    image = image_process.fix_orientation(image)
     
-    # file is valid image
-    # name, father name, pan card number, dob are correct format
+    st.image(image) #display the image
 
-    ## verify vs the input
+    #verify and match text with image
+    text_blobs = image_process.read_text_process(image)
 
-    ## store in a database
+    verified = {
+        "name":False,
+        "fathers_name":False,
+        "pan":False,
+        "dob":False
+    }
+
+    for text_blob in text_blobs:
+        if name in text_blob:
+            verified['name'] = True
+        if fathers_name in text_blob:
+            verified['fathers_name'] = True
+        if pan in text_blob:
+            verified['pan'] = True
+        if dob in text_blob:
+            verified['dob'] = True
+
+    for k,v in verified.items():
+        if v is False:
+            verification_failure(f"{k} did not match with image")
