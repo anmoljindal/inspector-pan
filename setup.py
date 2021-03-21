@@ -2,7 +2,7 @@ import dbutils
 
 def create_tables():
 
-	connection = db_connect() # connect to the database
+	connection = dbutils.db_connect() # connect to the database
 	cursor = connection.cursor() # instantiate a cursor obj
 	pan_sql = """
 	CREATE TABLE pan (
