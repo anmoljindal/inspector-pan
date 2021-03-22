@@ -5,6 +5,7 @@ import cv2
 import streamlit as st
 from streamlit.script_runner import RerunException
 
+import dbutils
 import image_process
 
 name_regex = '[A-Za-z]{2,25}( [A-Za-z]{2,25})?'
@@ -52,8 +53,36 @@ def verification_success():
     st.success(f"verification successful")
 
 def add_to_db(pan, name, fathers_name, dob):
-    product_sql = "INSERT INTO pan (id, name, fathers_name, dob) VALUES (?, ?, ?, ?)"
-    cur.execute(product_sql, (pan, name, fathers_name, dob))
+    product_sql = f'INSERT INTO pan (id, name, fathers_name, dob) VALUES ("{pan}", "{name}", "{fathers_name}", "{dob}")'
+    dbutils.run_query(product_sql)
+
+def verify_details(pan, name, fathers_name, dob):
+
+    verified = {
+        "name":False,
+        "fathers_name":False,
+        "pan":False,
+        "dob":False
+    }
+
+    for text_blob in text_blobs:
+        if name == text_blob:
+            verified['name'] = True
+        if fathers_name == text_blob:
+            verified['fathers_name'] = True
+        if pan == text_blob:
+            verified['pan'] = True
+        if dob == text_blob:
+            verified['dob'] = True
+
+    for k,v in verified.items():
+        if v is False:
+            verification_failure(f"{k} did not match with image")
+            return False
+
+    verification_success()
+    add_to_db(pan, name, fathers_name, dob)
+    return True
 
 failure_status = False
 
@@ -78,37 +107,12 @@ if st.button("verify"):
     if not verify_pan(pan):
         verification_failure("incorrect pan number")
         failure_status = True
+    pan = pan.lower()
 
     dob = standardize_dob(dob)
-    image = image_process.fix_orientation(image)
-    
-    st.image(image) #display the image
 
     #verify and match text with image
-    text_blobs = image_process.read_text_process(image)
+    image, text_blobs = image_process.read_text_process(image)
+    st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)) #display the image
 
-    verified = {
-        "name":False,
-        "fathers_name":False,
-        "pan":False,
-        "dob":False
-    }
-
-    for text_blob in text_blobs:
-        if name in text_blob:
-            verified['name'] = True
-        if fathers_name in text_blob:
-            verified['fathers_name'] = True
-        if pan in text_blob:
-            verified['pan'] = True
-        if dob in text_blob:
-            verified['dob'] = True
-
-    for k,v in verified.items():
-        if v is False:
-            verification_failure(f"{k} did not match with image")
-            failure_status = True
-
-    if not failure_status:
-        verification_success()
-        add_to_db(pan, name, fathers_name, dob)
+    verification_flag = verify_details(pan, name, fathers_name, dob)
