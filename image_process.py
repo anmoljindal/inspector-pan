@@ -8,13 +8,15 @@ import cv2
 import pytesseract
 import numpy as np
 from PIL import Image
-import face_recognition
+# import face_recognition
 from deskew import determine_skew
 
 ## initialize reader
 # def init_easyocr():
     # global reader
     # reader = easyocr.Reader(['en'], gpu = False)
+
+sharpen_kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
 
 def read_image(image) -> np.array:
     try:
@@ -40,22 +42,39 @@ def rotate(
     rot_mat[0, 2] += (height - old_height) / 2
     return cv2.warpAffine(image, rot_mat, (int(round(height)), int(round(width))), borderValue = background)
 
-def is_image_upside_down(img: np.array) -> bool:
-    
-    face_locations = face_recognition.face_locations(img)
-    encodings = face_recognition.face_encodings(img, face_locations)
-    image_is_upside_down = (len(encodings) == 0)
-    return image_is_upside_down
+def get_image_variations(images: list) -> list:
 
-def fix_orientation(image: np.array, identify_is_upside_down = True) -> np.array:
+    all_images = []
+    for image in images:
+
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        sharp_gray = cv2.filter2D(gray, -1, sharpen_kernel)
+        thresh1 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+                cv2.THRESH_BINARY,17,15)
+        thresh2 = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+                cv2.THRESH_BINARY,35,30)
+
+        all_images.extend([image, gray, sharp_gray, thresh1, thresh2])
+
+    return all_images
+
+# def is_image_upside_down(img: np.array) -> bool:
+    
+#     face_locations = face_recognition.face_locations(img)
+#     encodings = face_recognition.face_encodings(img, face_locations)
+#     image_is_upside_down = (len(encodings) == 0)
+#     return image_is_upside_down
+
+def fix_orientation(image: np.array) -> np.array:
 
     grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     angle = determine_skew(grayscale)
-    if identify_is_upside_down and is_image_upside_down(image):
-        angle += 180
+    # if is_image_upside_down(image):
+        # angle += 180
     
     rotated = rotate(image, angle, (0, 0, 0)) 
-    return rotated
+    alt_rotated = rotate(image, angle+180, (0, 0, 0))
+    return [rotated, alt_rotated]
 
 # def read_text_easyocr(image: np.array, threshold = 0.5) -> list:
 #     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -66,12 +85,10 @@ def fix_orientation(image: np.array, identify_is_upside_down = True) -> np.array
 #     return result
 
 def read_text_pytess(image: np.array, min_length = 2) -> list:
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    result = pytesseract.image_to_string(gray)
+    result = pytesseract.image_to_string(image)
     result = result.split('\n')
     result = list(filter(lambda x: len(x) >= min_length, result))
     return result
-
 
 ### perspective correction
 is_vertical = lambda theta: theta > 2.356 or theta < 0.7854
@@ -217,9 +234,13 @@ def correct_perspective(image, min_length_ratio = 0.3, pad_ratio = 0.2, min_area
 def read_text_process(image: np.array, method = 'pytess') -> list:
 
     image = correct_perspective(image, out_width = 500, out_height = 400)
-    image = fix_orientation(image, identify_is_upside_down=True)
+    images = fix_orientation(image)
+    images = get_image_variations(images)
 
-    if method  == 'pytess':
-        text_blobs = read_text_pytess(image)
+    text_blobs = []
+    for image in images:
+        if method  == 'pytess':
+            text_blobs.extend(read_text_pytess(image))
+
     text_blobs = list(map(lambda x: x.lower(), text_blobs))
-    return image, text_blobs
+    return text_blobs

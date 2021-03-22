@@ -28,6 +28,8 @@ with cols[1]:
 name = st.text_input("Name")
 fathers_name = st.text_input("Father's Name")
 
+placeholder = st.empty()
+
 def standardize_name(name: str) -> str:
     name = " ".join(name.lower().split())
     return name
@@ -46,17 +48,17 @@ def verify_pan(pan: str) -> bool:
 
 def verification_failure(message: str):
 
-    st.error(f"PAN Card Verification failed: {message}")
+    placeholder.error(f"PAN Card Verification failed: {message}")
 
 def verification_success():
 
-    st.success(f"verification successful")
+    placeholder.success(f"verification successful")
 
 def add_to_db(pan, name, fathers_name, dob):
     product_sql = f'INSERT INTO pan (id, name, fathers_name, dob) VALUES ("{pan}", "{name}", "{fathers_name}", "{dob}")'
     dbutils.run_query(product_sql)
 
-def verify_details(pan, name, fathers_name, dob):
+def verify_details(text_blobs, pan, name, fathers_name, dob):
 
     verified = {
         "name":False,
@@ -70,7 +72,7 @@ def verify_details(pan, name, fathers_name, dob):
             verified['name'] = True
         if fathers_name == text_blob:
             verified['fathers_name'] = True
-        if pan == text_blob:
+        if pan in text_blob:
             verified['pan'] = True
         if dob == text_blob:
             verified['dob'] = True
@@ -112,7 +114,5 @@ if st.button("verify"):
     dob = standardize_dob(dob)
 
     #verify and match text with image
-    image, text_blobs = image_process.read_text_process(image)
-    st.image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)) #display the image
-
-    verification_flag = verify_details(pan, name, fathers_name, dob)
+    text_blobs = image_process.read_text_process(image)
+    verification_flag = verify_details(text_blobs, pan, name, fathers_name, dob)
